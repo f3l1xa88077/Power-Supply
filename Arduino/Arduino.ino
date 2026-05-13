@@ -7,7 +7,7 @@
 #include <SPI.h>
 
 // -------- Voltage Pin Configuration --------
-int vsense = A1;
+int vsense_pin = A1;
 
 // -------- I2C Configuration --------
 int sda = 18;
@@ -20,7 +20,7 @@ const int RE_B = 2;
 const int RE_Btn = 7;
 volatile int encoderPos = 40;
 volatile int lastState = 0;
-int lastDisplayedPos = -1;
+float lastDisplayedPos = 0.0;
 float desired_voltage = 2.0;
 float desired_resistance = 10000;
 
@@ -30,10 +30,12 @@ int sck = 13;
 int miso = 12;
 int ncs = 10;
 
+uint8_t mcp_data = 128;
+
 void setup() {
 
   // -------- PIN I/O --------
-  pinMode(vsense, INPUT);
+  pinMode(vsense_pin, INPUT);
 
   // -------- Serial --------
   Serial.begin(9600);
@@ -68,30 +70,79 @@ void loop() {
   // -------- LCD DISPLAY --------
   desired_voltage = (float)encoderPos / 20;
   if (desired_voltage != lastDisplayedPos) {
+
+    // -------- DIGITAL POTENTIOMETER --------
+    // uint8_t mcp_data = calcResistance(desired_voltage) * 255 / 10000;
+    slowMCPWrite(mcp_data);
+    
+    // -------- VOLTAGE SENSING --------
+    int vsense = analogRead(vsense_pin);
+
+    // -------- FEEDBACK --------
+    float prev_err = 3*(float)vsense*5/1023 - desired_voltage;
+    int prev_vsense = vsense;
+    int prev_mcp_data = mcp_data;
+    bool cont = 1;
+    float cur_err = 0;
+
+    while (1 == 1) {
+      if (prev_err < 0) { // If the actual voltage is too low
+        mcp_data-=2;
+      }
+      else if (prev_err > 0) { // If the actual voltage is too high
+        mcp_data+=2;
+      }
+      // Send new value
+      slowMCPWrite(mcp_data);
+
+      delay(10); // Time for circuit to settle
+
+      // Read new value
+      vsense = analogRead(vsense_pin);
+      cur_err = 3*(float)vsense*5/1023 - desired_voltage;
+
+      Serial.print("Not Converged... Error: ");
+      Serial.println(cur_err);
+
+      // Calculate if previously converged
+      if (fabs(cur_err) >= fabs(prev_err)) {
+        mcp_data = prev_mcp_data;
+        vsense = prev_vsense;
+        cur_err = prev_err;
+        Serial.print("CONVERGED");
+        slowMCPWrite(mcp_data);
+        break;
+      }
+
+      // Update values
+      prev_err = cur_err;
+      prev_vsense = vsense;
+      prev_mcp_data = mcp_data;
+    }
+
+    // -------- SERIAL MONITOR --------
+    Serial.print(" | Voltage: ");
+    Serial.print(desired_voltage);
+    Serial.print(" | VSENSE: ");
+    Serial.print(vsense);
+    Serial.print(" | MCP: ");
+    Serial.print(mcp_data);
+    Serial.print(" | Error: ");
+    Serial.println(cur_err);
+
+    // -------- LCD --------
     lcd.setCursor(0, 0);
-    lcd.print("Pos: ");
+    lcd.print("Set: ");
     lcd.print(desired_voltage);
     lcd.print("    "); // Clear trailing digits
-
-    desired_resistance = calcResistance(desired_voltage);
     lcd.setCursor(0, 1);
-    lcd.print("Res: ");
-    lcd.print(desired_resistance);
+    lcd.print("Cur: ");
+    lcd.print(3*(float)vsense*5/1023);
     lcd.print("    "); // Clear trailing digits
-    
-    lastDisplayedPos = desired_voltage;
-  }
 
-  // -------- DIGITAL POTENTIOMETER --------
-  uint8_t mcp_data = desired_resistance * 255 / 10000;
-  slowMCPWrite(mcp_data);
-  Serial.print("MCP Value: ");
-  Serial.print(mcp_data);
-  
-  // -------- VOLTAGE SENSING --------
-  int tmp = analogRead(vsense);
-  Serial.print(" | VSENSE: ");
-  Serial.println(tmp);
+    lastDisplayedPos = desired_voltage;
+
+  }
 
 }
 

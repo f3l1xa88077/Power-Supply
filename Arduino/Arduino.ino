@@ -4,83 +4,109 @@
 #include <LiquidCrystal_I2C.h>
 
 // -------- SPI --------
-
 #include <SPI.h>
 
 // -------- Voltage Pin Configuration --------
-
 int vsense = A1;
 
 // -------- I2C Configuration --------
-
 int sda = 18;
 int scl = 19;
-
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// -------- SPI Configuration --------
+// -------- Rotary Encoder Configuration --------
+const int RE_A = 3;
+const int RE_B = 2;
+const int RE_Btn = 7;
+volatile int encoderPos = 0;
+volatile int lastState = 0;
+int lastDisplayedPos = -1;
 
+// -------- SPI Configuration --------
 int sck = 13;
 // int mosi = 11;
 int miso = 12;
 int ncs = 10;
-
 uint8_t mcp_data = 0;
-
-// -------- Rotary Encoder Configuration --------
-
-int scroll_button = 7;
-int scroll_a = 3;
-int scroll_b = 2;
 
 void setup() {
 
   // -------- PIN I/O --------
-
   pinMode(vsense, INPUT);
 
   // -------- Serial --------
-
   Serial.begin(9600);
 
   // -------- SPI --------
-
   pinMode(ncs, OUTPUT);
   pinMode(sck, OUTPUT);
   pinMode(12, OUTPUT); // Use Pin 12 (MISO track) as your Data Out
   pinMode(11, INPUT);  // Set Pin 11 (MOSI track) to INPUT so it doesn't short
-  
   digitalWrite(ncs, HIGH); // Disable Slave Select
-  // SPI.begin();
-
-
 
   // -------- I2C --------
-
   lcd.init();
   lcd.backlight();
   lcd.print("Startup...");
+
+  // -------- Rotary Encoder --------
+  pinMode(RE_A, INPUT_PULLUP);
+  pinMode(RE_B, INPUT_PULLUP);
+  lastState = (digitalRead(RE_A) << 1) | digitalRead(RE_B);
+
+  attachInterrupt(digitalPinToInterrupt(RE_A), readEncoderISR, CHANGE);
+
+  // -------- Setup --------
+  lcd.clear();
+  lcd.print("Ready");
 
 }
 
 void loop() {
   
   // -------- VOLTAGE SENSING --------
-
-  int tmp = analogRead(vsense);
-  Serial.print("VSENSE: ");
-  Serial.println(tmp);
+  // int tmp = analogRead(vsense);
+  // Serial.print("VSENSE: ");
+  // Serial.println(tmp);
 
   // -------- DIGITAL POTENTIOMETER --------
+  // slowMCPWrite(mcp_data);
+  // mcp_data = (mcp_data + 64) % 256;
+  // Serial.print(" | MCP Value: ");
+  // Serial.println(mcp_data);
 
-  slowMCPWrite(mcp_data);
-  mcp_data = (mcp_data + 64) % 256;
-  Serial.print(" | MCP Value: ");
-  Serial.println(mcp_data);
+  // -------- ROTARY ENCODER --------
+  int currentDisplayPos = encoderPos / 4;
 
-  delay(2000);
+  if (currentDisplayPos != lastDisplayedPos) {
+    lcd.setCursor(0, 0);
+    lcd.print("Pos: ");
+    lcd.print(currentDisplayPos);
+    lcd.print("    "); // Clear trailing digits
+    
+    Serial.println(currentDisplayPos);
+    lastDisplayedPos = currentDisplayPos;
+  }
 
 }
+
+// -------------------------- ISR ---------------------------
+
+void readEncoderISR() {
+  // Triggered by Pin A changing
+  int aState = digitalRead(RE_A);
+  int bState = digitalRead(RE_B);
+
+  if (aState != bState) {
+    encoderPos++;
+  } else {
+    encoderPos--;
+  }
+}
+
+
+
+// -------------------------- MCP Functions ---------------------------
 
 void slowMCPWrite(byte data) {
   digitalWrite(ncs, LOW);

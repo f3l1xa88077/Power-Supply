@@ -1,6 +1,7 @@
 // -------- I2C --------
 
 #include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 // -------- SPI --------
 
@@ -14,6 +15,8 @@ int vsense = A1;
 
 int sda = 18;
 int scl = 19;
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // -------- SPI Configuration --------
 
@@ -54,7 +57,9 @@ void setup() {
 
   // -------- I2C --------
 
-  // Wire.begin();
+  lcd.init();
+  lcd.backlight();
+  lcd.print("Startup...");
 
 }
 

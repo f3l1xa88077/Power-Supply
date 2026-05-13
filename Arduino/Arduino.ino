@@ -18,16 +18,17 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 const int RE_A = 3;
 const int RE_B = 2;
 const int RE_Btn = 7;
-volatile int encoderPos = 0;
+volatile int encoderPos = 40;
 volatile int lastState = 0;
 int lastDisplayedPos = -1;
+float desired_voltage = 2.0;
+float desired_resistance = 10000;
 
 // -------- SPI Configuration --------
 int sck = 13;
 // int mosi = 11;
 int miso = 12;
 int ncs = 10;
-uint8_t mcp_data = 0;
 
 void setup() {
 
@@ -63,30 +64,34 @@ void setup() {
 }
 
 void loop() {
-  
-  // -------- VOLTAGE SENSING --------
-  // int tmp = analogRead(vsense);
-  // Serial.print("VSENSE: ");
-  // Serial.println(tmp);
 
-  // -------- DIGITAL POTENTIOMETER --------
-  // slowMCPWrite(mcp_data);
-  // mcp_data = (mcp_data + 64) % 256;
-  // Serial.print(" | MCP Value: ");
-  // Serial.println(mcp_data);
-
-  // -------- ROTARY ENCODER --------
-  int currentDisplayPos = encoderPos / 4;
-
-  if (currentDisplayPos != lastDisplayedPos) {
+  // -------- LCD DISPLAY --------
+  desired_voltage = (float)encoderPos / 20;
+  if (desired_voltage != lastDisplayedPos) {
     lcd.setCursor(0, 0);
     lcd.print("Pos: ");
-    lcd.print(currentDisplayPos);
+    lcd.print(desired_voltage);
+    lcd.print("    "); // Clear trailing digits
+
+    desired_resistance = calcResistance(desired_voltage);
+    lcd.setCursor(0, 1);
+    lcd.print("Res: ");
+    lcd.print(desired_resistance);
     lcd.print("    "); // Clear trailing digits
     
-    Serial.println(currentDisplayPos);
-    lastDisplayedPos = currentDisplayPos;
+    lastDisplayedPos = desired_voltage;
   }
+
+  // -------- DIGITAL POTENTIOMETER --------
+  uint8_t mcp_data = desired_resistance * 255 / 10000;
+  slowMCPWrite(mcp_data);
+  Serial.print("MCP Value: ");
+  Serial.print(mcp_data);
+  
+  // -------- VOLTAGE SENSING --------
+  int tmp = analogRead(vsense);
+  Serial.print(" | VSENSE: ");
+  Serial.println(tmp);
 
 }
 
@@ -98,13 +103,11 @@ void readEncoderISR() {
   int bState = digitalRead(RE_B);
 
   if (aState != bState) {
-    encoderPos++;
-  } else {
     encoderPos--;
+  } else {
+    encoderPos++;
   }
 }
-
-
 
 // -------------------------- MCP Functions ---------------------------
 
@@ -133,4 +136,14 @@ void shiftOutManual(uint8_t dataPin, uint8_t clockPin, uint8_t bitOrder, uint8_t
     digitalWrite(clockPin, LOW);
     delayMicroseconds(10);
   }
+}
+
+int calcResistance(float voltage) {
+  // Base Cases
+  if (voltage > 6.0) {return 0;}
+  if (voltage < 2.0) {return 10000;}
+
+  float num = 12.5*220;
+  float den = voltage - 1.25;
+  return num / den - 440;
 }

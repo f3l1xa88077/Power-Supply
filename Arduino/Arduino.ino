@@ -22,8 +22,7 @@ const int RE_A = 3;
 const int RE_B = 2;
 const int RE_Btn = 7;
 volatile int lastState = 0;
-float desired_voltage = 2.0;
-volatile int encoderPos = desired_voltage * 20;
+volatile float desired_voltage = 2.0;
 
 // -------- SPI Configuration --------
 int sck = 13;
@@ -67,7 +66,6 @@ void setup() {
 void loop() {
 
   // -------- Calculate Desired Position --------
-  desired_voltage = (float)encoderPos / 10;
   Serial.println(desired_voltage);
 
   // if (desired_voltage != lastDisplayedPos) {
@@ -155,10 +153,13 @@ void readEncoderISR() {
   int bState = digitalRead(RE_B);
 
   if (aState != bState) {
-    encoderPos--;
+    desired_voltage -= 0.1;
   } else {
-    encoderPos++;
+    desired_voltage += 0.1;
   }
+
+  if (desired_voltage < 2.0) { desired_voltage = 2.0; }
+  else if (desired_voltage > 6.0) { desired_voltage = 6.0; }
 }
 
 // -------------------------- MCP Functions ---------------------------

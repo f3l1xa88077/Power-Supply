@@ -131,7 +131,7 @@ void loop() {
 
 float vsense_voltage(int vsense_pin) {
   int vsense_adc = analogRead(vsense_pin);
-  return (float)vsense_adc * 5.0 * 3.0 / 1023.0;
+  return (float)vsense_adc * 5.0 * 3.0 / 1023.0 + 0.05; // 0.05 from experimental testing
 }
 
 // -------------------------- ISR ---------------------------
@@ -147,7 +147,7 @@ void readEncoderISR() {
     desired_voltage += 0.1;
   }
 
-  if (desired_voltage < 2.5) { desired_voltage = 2.0; }
+  if (desired_voltage < 2.4) { desired_voltage = 2.4; }
   else if (desired_voltage > 6.0) { desired_voltage = 6.0; }
 }
 

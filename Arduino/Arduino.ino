@@ -77,10 +77,13 @@ void loop() {
     // Calculate Error
     volatile float cur_error = vsense - set_voltage;
 
-    while (fabs(cur_error) > 0.1) {
+    while (fabs(cur_error) >= 0.05) {
 
       // Calculate how many steps to take
       int steps = cur_error / 0.1;
+      if (steps == 0) {
+        steps = (cur_error > 0) ? 1 : -1;
+      }
 
       // Calculate New Rheostat Value
       mcp_val += steps;

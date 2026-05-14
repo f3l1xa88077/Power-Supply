@@ -8,27 +8,26 @@
 
 // -------- Voltage Pin Configuration --------
 int vsense_pin = A1;
+volatile float vsense;
 
 // -------- I2C Configuration --------
 int sda = 18;
 int scl = 19;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-float cur_voltage = 0;
-float prev_voltage = -1;
-
 // -------- Rotary Encoder Configuration --------
 const int RE_A = 3;
 const int RE_B = 2;
 const int RE_Btn = 7;
-volatile int lastState = 0;
+
+volatile float prev_voltage = -1;
 volatile float desired_voltage = 2.0;
 
 // -------- SPI Configuration --------
 int sck = 13;
 int miso = 12;
 int ncs = 10;
-uint8_t mcp_data = 128;
+uint8_t mcp_val = 128;
 
 void setup() {
 
@@ -53,20 +52,70 @@ void setup() {
   // -------- Rotary Encoder --------
   pinMode(RE_A, INPUT_PULLUP);
   pinMode(RE_B, INPUT_PULLUP);
-  lastState = (digitalRead(RE_A) << 1) | digitalRead(RE_B);
 
   attachInterrupt(digitalPinToInterrupt(RE_A), readEncoderISR, CHANGE);
-
-  // -------- Setup --------
-  lcd.clear();
-  lcd.print("Ready");
 
 }
 
 void loop() {
 
-  // -------- Calculate Desired Position --------
-  Serial.println(desired_voltage);
+  if (desired_voltage != prev_voltage) { // Execute code only if a change in input is detected
+
+    // -------- LCD --------
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("INPUT: ");
+    lcd.print(desired_voltage);
+    lcd.print(" V   "); // Clear trailing digits
+
+    // -------- VOLTAGE SENSING --------
+    vsense = vsense_voltage(vsense_pin);
+
+    // -------- FEEDBACK --------
+
+    // Calculate Error
+    volatile float prev_error = 99;
+    volatile float cur_error = vsense - desired_voltage;
+
+    while (fabs(cur_error) < fabs(prev_error)) {
+
+      // Print Error
+      Serial.print("Not Converged... Error is: ");
+      Serial.println(cur_error);
+
+      // Update values
+      prev_error = cur_error;
+
+      // Calculate New Rheostat Value
+      if (prev_error < 0) { // If the error is negative i.e., output voltage is too low
+        mcp_val -= 2; // Decrease Rheostat Resistance
+      }
+      else if (prev_error > 0) { // If the error is positive i.e., output voltage is too high
+        mcp_val -= 2; // Increase Rheostat Resistance
+      }
+
+      // Send new Rheo value
+      slowMCPWrite(mcp_val);
+
+      // Calculate Error
+      vsense = vsense_voltage(vsense_pin);
+      volatile float cur_error = vsense - desired_voltage;
+
+      Serial.print("VSENSE: ");
+      Serial.println(vsense);
+
+    }
+
+    Serial.print("Converged... Voltage: ");
+    Serial.println(vsense);
+
+    // -------- LCD --------
+    lcd.setCursor(0, 1);
+    lcd.print("OUTPUT: ");
+    lcd.print(vsense);
+    lcd.print(" V   "); // Clear trailing digits
+
+  }
 
   // if (desired_voltage != lastDisplayedPos) {
 
@@ -74,8 +123,7 @@ void loop() {
   //   // uint8_t mcp_data = calcResistance(desired_voltage) * 255 / 10000;
   //   slowMCPWrite(mcp_data);
     
-  //   // -------- VOLTAGE SENSING --------
-  //   int vsense = analogRead(vsense_pin);
+
 
   //   // -------- FEEDBACK --------
   //   float best_err = 999;
@@ -143,6 +191,16 @@ void loop() {
 
   // }
 
+  // Update State
+  prev_voltage = desired_voltage;
+
+}
+
+// -------------------------- Analog ---------------------------
+
+float vsense_voltage(int vsense_pin) {
+  int vsense_adc = analogRead(vsense_pin);
+  return (float)vsense_adc * 5.0 * 3.0 / 1023.0;
 }
 
 // -------------------------- ISR ---------------------------

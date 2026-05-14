@@ -6,6 +6,10 @@
 // -------- SPI --------
 #include <SPI.h>
 
+// -------- Voltage Configuration --------
+const float min_voltage = 2.40;
+const float max_voltage = 6.0;
+
 // -------- Voltage Pin Configuration --------
 int vsense_pin = A1;
 volatile float vsense;
@@ -27,7 +31,7 @@ volatile float desired_voltage = 2.5;
 int sck = 13;
 int miso = 12;
 int ncs = 10;
-uint8_t mcp_val = 128;
+uint8_t mcp_val = 220;
 
 void setup() {
 
@@ -55,6 +59,8 @@ void setup() {
 
   attachInterrupt(digitalPinToInterrupt(RE_A), readEncoderISR, CHANGE);
 
+  delay(500);
+
 }
 
 void loop() {
@@ -75,17 +81,18 @@ void loop() {
     // -------- FEEDBACK --------
 
     // Calculate Error
-    volatile float cur_error = vsense - set_voltage;
+    volatile float cur_err = vsense - set_voltage;
+    float prev_err = 999.0;
+    uint8_t best_mcp = mcp_val;
 
-    while (fabs(cur_error) >= 0.05) {
+    while ((fabs(cur_err) < fabs(prev_err)) || (fabs(cur_err) > 0.2)) { // If still converging or if very far away
 
       // Calculate how many steps to take
-      int steps = cur_error / 0.1;
-      if (steps == 0) {
-        steps = (cur_error > 0) ? 1 : -1;
-      }
+      int steps = calculate_steps(set_voltage, cur_err);
 
       // Calculate New Rheostat Value
+      prev_err = cur_err;
+      best_mcp = mcp_val;
       mcp_val += steps;
 
       // Send new Rheo value
@@ -97,23 +104,22 @@ void loop() {
 
       // Calculate Error
       vsense = vsense_voltage(vsense_pin);
-      cur_error = vsense - set_voltage;
+      cur_err = vsense - set_voltage;
 
       // Print Error
       Serial.print("Not Converged... Error is: ");
-      Serial.print(cur_error);
-      Serial.print(" | ");
-      Serial.print("MCP: ");
-      Serial.print(mcp_val);
-      Serial.print(" | ");
-      Serial.print("Vsense: ");
-      Serial.print(vsense);
-      Serial.print(" | ");
-      Serial.print("Vtarget: ");
-      Serial.println(set_voltage);
+      Serial.print(cur_err);
+      Serial.print(" | Step: ");
+      Serial.print(steps);
+      Serial.print(" | MCP: ");
+      Serial.println(mcp_val);
 
     }
 
+    mcp_val = best_mcp;
+    slowMCPWrite(mcp_val);
+    delay(5);
+    vsense = vsense_voltage(vsense_pin);
     Serial.print("Converged... Voltage: ");
     Serial.println(vsense);
 
@@ -150,11 +156,20 @@ void readEncoderISR() {
     desired_voltage += 0.1;
   }
 
-  if (desired_voltage < 2.4) { desired_voltage = 2.4; }
-  else if (desired_voltage > 6.0) { desired_voltage = 6.0; }
+  desired_voltage = constrain(desired_voltage, min_voltage, max_voltage);
 }
 
 // -------------------------- MCP Functions ---------------------------
+
+int calculate_steps(float voltage, float err) {
+  float num = 20 * err;
+  float den = 1 * (voltage - 2.2); // Voltage can only be minimum of 2.5, so we avoid divide by 0 error
+  int steps = num / den;
+  if (steps == 0) {
+    steps = (err > 0) ? 1 : -1;
+  }
+  return steps;
+}
 
 void slowMCPWrite(byte data) {
   digitalWrite(ncs, LOW);

@@ -21,7 +21,7 @@ const int RE_B = 2;
 const int RE_Btn = 7;
 
 volatile float prev_voltage = -1;
-volatile float desired_voltage = 2.0;
+volatile float desired_voltage = 2.5;
 
 // -------- SPI Configuration --------
 int sck = 13;
@@ -62,10 +62,11 @@ void loop() {
   if (desired_voltage != prev_voltage) { // Execute code only if a change in input is detected
 
     // -------- LCD --------
+    float set_voltage = desired_voltage; // Save current voltage so it isn't overwritten
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("INPUT: ");
-    lcd.print(desired_voltage);
+    lcd.print(set_voltage);
     lcd.print(" V   "); // Clear trailing digits
 
     // -------- VOLTAGE SENSING --------
@@ -74,35 +75,39 @@ void loop() {
     // -------- FEEDBACK --------
 
     // Calculate Error
-    volatile float prev_error = 99;
-    volatile float cur_error = vsense - desired_voltage;
+    volatile float cur_error = vsense - set_voltage;
 
-    while (fabs(cur_error) < fabs(prev_error)) {
+    while (fabs(cur_error) > 0.1) {
 
-      // Print Error
-      Serial.print("Not Converged... Error is: ");
-      Serial.println(cur_error);
-
-      // Update values
-      prev_error = cur_error;
+      // Calculate how many steps to take
+      int steps = cur_error / 0.1;
 
       // Calculate New Rheostat Value
-      if (prev_error < 0) { // If the error is negative i.e., output voltage is too low
-        mcp_val -= 2; // Decrease Rheostat Resistance
-      }
-      else if (prev_error > 0) { // If the error is positive i.e., output voltage is too high
-        mcp_val -= 2; // Increase Rheostat Resistance
-      }
+      mcp_val += steps;
 
       // Send new Rheo value
+      mcp_val = constrain(mcp_val, 0, 255);
       slowMCPWrite(mcp_val);
+
+      // Small Delay for Circuit Stabilisation
+      delay(5);
 
       // Calculate Error
       vsense = vsense_voltage(vsense_pin);
-      volatile float cur_error = vsense - desired_voltage;
+      cur_error = vsense - set_voltage;
 
-      Serial.print("VSENSE: ");
-      Serial.println(vsense);
+      // Print Error
+      Serial.print("Not Converged... Error is: ");
+      Serial.print(cur_error);
+      Serial.print(" | ");
+      Serial.print("MCP: ");
+      Serial.print(mcp_val);
+      Serial.print(" | ");
+      Serial.print("Vsense: ");
+      Serial.print(vsense);
+      Serial.print(" | ");
+      Serial.print("Vtarget: ");
+      Serial.println(set_voltage);
 
     }
 
@@ -115,84 +120,10 @@ void loop() {
     lcd.print(vsense);
     lcd.print(" V   "); // Clear trailing digits
 
+    // Update State
+    prev_voltage = set_voltage;
+
   }
-
-  // if (desired_voltage != lastDisplayedPos) {
-
-  //   // -------- DIGITAL POTENTIOMETER --------
-  //   // uint8_t mcp_data = calcResistance(desired_voltage) * 255 / 10000;
-  //   slowMCPWrite(mcp_data);
-    
-
-
-  //   // -------- FEEDBACK --------
-  //   float best_err = 999;
-  //   int best_vsense = vsense;
-  //   int best_mcp_data = mcp_data;
-  //   bool cont = 1;
-  //   float cur_err = 0;
-
-  //   while (1 == 1) {
-  //     if (best_err < 0) { // If the actual voltage is too low
-  //       mcp_data-=2;
-  //     }
-  //     else if (best_err > 0) { // If the actual voltage is too high
-  //       mcp_data+=2;
-  //     }
-  //     // Send new value
-  //     slowMCPWrite(mcp_data);
-
-  //     delay(50); // Time for circuit to settle
-
-  //     // Read new value
-  //     vsense = analogRead(vsense_pin); // Adding for error
-  //     cur_err = 3*(float)vsense*5/1023 - desired_voltage;
-
-  //     Serial.print("Not Converged... Error: ");
-  //     Serial.println(cur_err);
-
-  //     // Calculate if previously converged
-  //     if (fabs(cur_err) < fabs(best_err)) {
-  //       best_mcp_data = mcp_data;
-  //       best_vsense = vsense;
-  //       best_err = cur_err;
-  //     }
-  //     else {
-  //       mcp_data = best_mcp_data;
-  //       vsense = best_vsense;
-  //       cur_err = best_err;
-  //       Serial.print("CONVERGED");
-  //       slowMCPWrite(mcp_data);
-  //       break;
-  //     }
-  //   }
-
-  //   // -------- SERIAL MONITOR --------
-  //   Serial.print(" | Voltage: ");
-  //   Serial.print(desired_voltage);
-  //   Serial.print(" | VSENSE: ");
-  //   Serial.print(vsense);
-  //   Serial.print(" | MCP: ");
-  //   Serial.print(mcp_data);
-  //   Serial.print(" | Error: ");
-  //   Serial.println(cur_err);
-
-  //   // -------- LCD --------
-  //   lcd.setCursor(0, 0);
-  //   lcd.print("Set: ");
-  //   lcd.print(desired_voltage);
-  //   lcd.print("    "); // Clear trailing digits
-  //   lcd.setCursor(0, 1);
-  //   lcd.print("Cur: ");
-  //   lcd.print(3*(float)vsense*5/1023);
-  //   lcd.print("    "); // Clear trailing digits
-
-  //   lastDisplayedPos = desired_voltage;
-
-  // }
-
-  // Update State
-  prev_voltage = desired_voltage;
 
 }
 
@@ -216,7 +147,7 @@ void readEncoderISR() {
     desired_voltage += 0.1;
   }
 
-  if (desired_voltage < 2.0) { desired_voltage = 2.0; }
+  if (desired_voltage < 2.5) { desired_voltage = 2.0; }
   else if (desired_voltage > 6.0) { desired_voltage = 6.0; }
 }
 
